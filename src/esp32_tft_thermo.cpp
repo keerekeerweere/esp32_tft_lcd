@@ -29,19 +29,13 @@ WebServer ESP32TftThermo::webServer(80);
 
 void ESP32TftThermo::get_network_info(){
     if(WiFi.status() == WL_CONNECTED) {
-        Serial.print("[*] Network information for ");
-        Serial.println(ESP_32_WIFI_SSID);
-
-        Serial.println("[+] BSSID : " + WiFi.BSSIDstr());
-        Serial.print("[+] Gateway IP : ");
-        Serial.println(WiFi.gatewayIP());
-        Serial.print("[+] Subnet Mask : ");
-        Serial.println(WiFi.subnetMask());
-        Serial.println((String)"[+] RSSI : " + WiFi.RSSI() + " dB");
-        Serial.print("[+] ESP32 IP : ");
-        Serial.println(WiFi.localIP());
-        Serial.print("[+] ESP32 DNS IP : ");
-        Serial.println(WiFi.dnsIP(0));
+        logI("[*] Network information for %s ", ESP_32_WIFI_SSID);
+        logI("[+] BSSID : %s" , WiFi.BSSIDstr().c_str());
+        logI("[+] Gateway IP : %s", ((String)WiFi.gatewayIP().toString()).c_str() );
+        logI("[+] Subnet Mask : %s", ((String)WiFi.subnetMask().toString()).c_str() );
+        logI("[+] RSSI : %i dB" , WiFi.RSSI());
+        logI("[+] ESP32 IP : %s",  ((String)WiFi.localIP().toString()).c_str());
+        logI("[+] ESP32 DNS IP : %s"), ((String)WiFi.dnsIP(0).toString()).c_str();
     }
 }
 
