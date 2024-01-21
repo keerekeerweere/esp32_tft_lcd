@@ -22,6 +22,18 @@
 #include <logging.hpp>
 #include <ets-appender.hpp>
 
+#define DISABLE_BROWNOUT_DETECTOR
+
+#ifdef DISABLE_BROWNOUT_DETECTOR
+
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
+
+#endif
+
+// in setup()
+
+
 ESP32TftThermo& thermoapp = ESP32TftThermo::getInstance();
 WiFiClient ESP32TftThermo::espClient = WiFiClient();
 WebServer ESP32TftThermo::webServer(80);
@@ -30,12 +42,13 @@ WebServer ESP32TftThermo::webServer(80);
 void ESP32TftThermo::get_network_info(){
     if(WiFi.status() == WL_CONNECTED) {
         logI("[*] Network information for %s ", ESP_32_WIFI_SSID);
-        logI("[+] BSSID : %s" , WiFi.BSSIDstr().c_str());
+        logI("[+] BSSID : %s" , WiFi.BSSIDstr().c_str());        
         logI("[+] Gateway IP : %s", ((String)WiFi.gatewayIP().toString()).c_str() );
         logI("[+] Subnet Mask : %s", ((String)WiFi.subnetMask().toString()).c_str() );
         logI("[+] RSSI : %i dB" , WiFi.RSSI());
         logI("[+] ESP32 IP : %s",  ((String)WiFi.localIP().toString()).c_str());
         logI("[+] ESP32 DNS IP : %s"), ((String)WiFi.dnsIP(0).toString()).c_str();
+        
     }
 }
 
@@ -88,19 +101,52 @@ void ESP32TftThermo::wifiTime() {
 
   configTime(gmtOffset_sec, daylightOffset_sec, ESP_32_WIFI_NTPHOSTNAME);
 
-  String t = getTime();
+  String t = getDateTime();
   logI("Time %s" , t.c_str());
 
 }
 
-
 String ESP32TftThermo::getTime() {
+  struct tm timeinfo;
+  for (int i=0;i<5;i++) {
+    logV(".time.");
+    if(getLocalTime(&timeinfo)) {
+      char charTime[64];
+      strftime(charTime, sizeof(charTime), "%H:%M", &timeinfo);
+      logV("now : %s ", charTime);  
+      return String(charTime);
+    }
+    delay(500);
+  }
+  logE("failed to obtain time");
+  return String("");
+}
+
+
+String ESP32TftThermo::getDate() {
+  struct tm timeinfo;
+  for (int i=0;i<5;i++) {
+    logV(".time.");
+    if(getLocalTime(&timeinfo)) {
+      char charTime[64];
+      strftime(charTime, sizeof(charTime), "%d/%m/%y", &timeinfo);
+      logV("now : %s ", charTime);  
+      return String(charTime);
+    }
+    delay(500);
+  }
+  logE("failed to obtain time");
+  return String("");
+}
+
+
+String ESP32TftThermo::getDateTime() {
   struct tm timeinfo;
   for (int i=0;i<5;i++) {
     logD(".time.");
     if(getLocalTime(&timeinfo)) {
       char charTime[64];
-      strftime(charTime, sizeof(charTime), "%A, %B %d %Y %H:%M:%S", &timeinfo);
+      strftime(charTime, sizeof(charTime), "%A, %B  %Y %H:%M:%S", &timeinfo);
       logD("now : %s ", charTime);  
       return String(charTime);
     }
@@ -109,6 +155,7 @@ String ESP32TftThermo::getTime() {
   logE("failed to obtain time");
   return String("");
 }
+
 
 
 void ESP32TftThermo::setupTFT() {
@@ -130,6 +177,14 @@ void ESP32TftThermo::setupLogging() {
 }
 
 void setup(void) {
+
+#ifdef DISABLE_BROWNOUT_DETECTOR
+
+  //override brownout detected
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+
+#endif
+
   //setup serial 
   thermoapp.setupSerial();
 
@@ -149,9 +204,13 @@ void ESP32TftThermo::appLoop() {
   //current millis
   unsigned long currentMillis = millis();
 
+  char temp[]="23.2 C";
+
   //clear every 20seconds (or so)
   if (currentMillis - previousClearMillis >= clearTime) {
     clearScreen();
+    redrawZones(temp);
+    
     //assign previous before we go out of the loop
     previousClearMillis = currentMillis;
   }
@@ -160,18 +219,28 @@ void ESP32TftThermo::appLoop() {
   if (currentMillis - previousMoveMillis >= moveTime) {
       //clear previous drawing
 
-      char text[]="23.2 C";
-      redraw(TFT_BLACK, TFT_BLACK, zones[0], text);
+      redrawZones(temp);
 
-      slightMove++;
-      if (slightMove>10) slightMove=0;
-      //draw new one
-      redraw(TFT_WHITE, TFT_BLACK, zones[0], text);
-
-    //assign previous before we go out of the loop
-    previousMoveMillis = currentMillis;
+      // assign previous before we go out of the loop
+      previousMoveMillis = currentMillis;
     }
+}
 
+void ESP32TftThermo::redrawZones(char temp[7])
+{
+  redrawZone(0, temp, FSS24);
+  redrawZone(1, getTime().c_str());
+  redrawZone(2, getDate().c_str(), FSS12);
+}
+
+void ESP32TftThermo::redrawZone(u8_t zone, const char *text, const GFXfont *f)
+{
+  // draw new one
+  redraw(TFT_WHITE, TFT_BLACK, zones[zone], text, f);
+
+  slightMove++;
+  if (slightMove > 10)
+    slightMove = 0;
 
 }
 
@@ -185,13 +254,14 @@ void ESP32TftThermo::clearScreen() {
 
 }
 
-void ESP32TftThermo::redraw(uint16_t c, uint16_t b, Coord& cd, const char* text) {
+void ESP32TftThermo::redraw(uint16_t c, uint16_t b, Coord& cd, const char* text, const GFXfont *f) {
     // Set text datum to middle centre
   tft.setTextDatum(MC_DATUM);
 
   tft.setTextColor(c, b);
-  tft.setFreeFont(FSS18);                 // Select the font
-  tft.drawString(text, cd.x + slightMove, cd.y + slightMove, GFXFF);// Print the string name of the font
+  tft.setFreeFont(f);                 // Select the font
+  //tft.drawString(text, cd.x + slightMove, cd.y + slightMove, GFXFF);// Print the string name of the font
+  tft.drawString(text, cd.x , cd.y , GFXFF);// Print the string name of the font
 
 }
 

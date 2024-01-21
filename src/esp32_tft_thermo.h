@@ -13,11 +13,10 @@ struct Coord {
   unsigned int x, y;  
 };
 
-Coord zones[4] = {
-    {80, 42},
-    {160, 42},
-    {80, 82},
-    {160, 82},
+Coord zones[3] = {
+    {80, 22},
+    {80, 72},
+    {80, 122}
 };
 
 // There follows a crude way of flagging that this example sketch needs fonts which
@@ -58,25 +57,31 @@ class ESP32TftThermo : public ESP32Loggable {
         ESP32TftThermo& operator=(const ESP32TftThermo&) = delete;
 
         void clearScreen();
-        void redraw(uint16_t c, uint16_t b, Coord& cd, const char* text);
 
+        void redrawZone(u8_t zone, const char *text, const GFXfont *f = FSS18);
+        void redraw(uint16_t c, uint16_t b, Coord& cd, const char* text, const GFXfont *f = FSS18);
+
+
+
+        void appLoop();
+
+        void redrawZones(char temp[7]);
+
+        static WebServer webServer;
+        static WiFiClient espClient;
+
+        //wifi
         void setupWifi();
         void setupSerial();
         void setupTFT();
         void setupLogging();
 
-
-        void appLoop();
-
-        static WebServer webServer;
-        static WiFiClient espClient;
-
-
     protected:
         // Use hardware SPI
         TFT_eSPI tft = TFT_eSPI();
 
-        //wifi
+
+
         void get_network_info();
 
     private:
@@ -92,6 +97,8 @@ class ESP32TftThermo : public ESP32Loggable {
 
         void wifiTime();
         String getTime();
+        String getDate();
+        String getDateTime();
 
 };
 
