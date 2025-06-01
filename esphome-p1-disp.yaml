@@ -43,19 +43,27 @@ time:
 logger:
 
 
-# Example configuration entry
 font:
   - file: '/config/esphome/fonts/OpenSans-Regular.ttf'
+    id: font_big
+    size: 36    # main kW value above bar
+  - file: '/config/esphome/fonts/OpenSans-Regular.ttf'
     id: font1
-    size: 32
+    size: 24    # for "Monthly Peak" value
+  - file: '/config/esphome/fonts/OpenSans-Regular.ttf'
+    id: font_small
+    size: 16    # labels & units
 
 sensor:
   - platform: homeassistant
     id: p1_produced
-    entity_id: sensor.slimmelezer_power_produced
+    entity_id: sensor.power_produced
   - platform: homeassistant
     id: p1_consumed
-    entity_id: sensor.slimmelezer_power_consumed
+    entity_id: sensor.power_consumed
+  - platform: homeassistant
+    id: peak_monthly
+    entity_id: sensor.peak_tarrif_monthly_demand
 
 
 spi:
@@ -69,7 +77,7 @@ display:
     cs_pin: 5
     dc_pin: 16
     reset_pin: 17
-    data_rate: 10MHz   # Can be reduced to 20MHz if unstable
+    data_rate: 10MHz   # Can be raised to 20MHz if stable
     dimensions:
       width: 170
       height: 320
@@ -80,28 +88,102 @@ display:
     invert_colors: true
     update_interval: 1s
     lambda: |-
-      // Switch color every 2 seconds, cycle through: RED, GREEN, BLUE, WHITE
-      auto black = Color(0, 0, 0);
-      auto red = Color(255, 0, 0);
-      auto green = Color(0, 255, 0);
-      auto blue = Color(0, 0, 255);
-      auto white = Color(255, 255, 255);      
-      int cycle = (millis() / 2000) % 5;
-      switch (cycle) {
-        case 0:
-          it.fill(red);
-          break;
-        case 1:
-          it.fill(green);
-          break;
-        case 2:
-          it.fill(blue);
-          break;
-        case 3:
-          it.fill(white);
-          break;
-        case 4:
-          it.fill(Color(0, 0, 0)); // black background
-          it.print(10, 40, id(font1), Color(255, 255, 255), TextAlign::TOP_LEFT, "Hello, ESPHome!");          
-          break;
+      // --- Constants and layout ---
+      const float max_kw = 22.0f;
+      const float break_kw = 11.0f;
+      const float break_frac = 0.9f;
+
+      const int font_height = 40;     // font_big for main kW number
+      const int value_gap = 12;
+      const int bar_y = font_height + value_gap + 10;
+      const int bar_height = 50;      // reduced for space
+      const int margin = 18;
+      const int center_x = it.get_width() / 2;
+      const int bar_width = it.get_width() - margin * 2;
+      const int screen_width = it.get_width();
+      const int screen_height = it.get_height();
+
+      // Colors
+      Color bg         = Color(0, 0, 0);
+      Color base_bar   = Color(32, 32, 32);
+      Color bar_orange = Color(255, 171, 0);
+      Color text_white = Color(255,255,255);
+      Color text_gray  = Color(128,128,128);
+
+      // Read sensor values
+      float produced = id(p1_produced).has_state() ? id(p1_produced).state : 0.0f;
+      float consumed = id(p1_consumed).has_state() ? id(p1_consumed).state : 0.0f;
+      float peak_val = id(peak_monthly).has_state() ? id(peak_monthly).state : 0.0f;
+
+      // Main kW value above bar (negative if produced)
+      float value_to_display = 0.0f;
+      if (produced > 0.0f) {
+        value_to_display = -produced;
+      } else if (consumed > 0.0f) {
+        value_to_display = consumed;
       }
+
+      // --- Piecewise scaling for bar fill ---
+      auto scale_value = [break_kw, break_frac, max_kw](float v) -> float {
+        v = fmaxf(v, 0.0f);
+        if (v <= break_kw) {
+          return (v / break_kw) * break_frac;
+        } else {
+          return break_frac + ((fminf(v, max_kw) - break_kw) / (max_kw - break_kw)) * (1.0f - break_frac);
+        }
+      };
+
+      float produced_norm = scale_value(produced);
+      float consumed_norm = scale_value(consumed);
+
+      it.fill(bg);
+
+      // --- Top labels ---
+      it.print(margin, 2, id(font_small), text_white, TextAlign::TOP_LEFT, "Produced");
+      it.print(screen_width - margin, 2, id(font_small), bar_orange, TextAlign::TOP_RIGHT, "Consumed");
+
+      // --- Bar chart ---
+      it.filled_rectangle(margin, bar_y, bar_width, bar_height, base_bar);
+      if (produced_norm > 0) {
+        int bar_px = int((bar_width/2) * produced_norm);
+        it.filled_rectangle(center_x - bar_px, bar_y, bar_px, bar_height, bar_orange);
+      }
+      if (consumed_norm > 0) {
+        int bar_px = int((bar_width/2) * consumed_norm);
+        it.filled_rectangle(center_x + 1, bar_y, bar_px, bar_height, bar_orange);
+      }
+      it.filled_rectangle(center_x, bar_y, 2, bar_height, text_white);
+
+      // --- Main value above bar ---
+      it.printf(center_x, 12, id(font_big), text_white, TextAlign::TOP_CENTER, "%.3f kW", value_to_display);
+
+      // --- Bottom right: Monthly Peak value block, right-aligned below bar ---
+
+      // Font heights
+      const int value_font_height = 24;  // font1
+      const int unit_font_height = 16;   // font_small
+      const int label_font_height = 16;  // font_small
+      const int value_unit_gap = 4;
+      const int block_gap = 12; // space between "kW" and labels
+      const int label_line_gap = 0; // between Monthly/Peak
+
+      // Estimate string widths (adjust for your fonts if you want perfection)
+      int value_text_width = 70;   // width of e.g. "3.849" in font1
+      int unit_text_width = 24;    // width of "kW" in font_small
+      int label_text_width = 56;   // width of "Monthly" in font_small
+
+      int total_width = value_text_width + value_unit_gap + unit_text_width + block_gap + label_text_width;
+      int block_right_x = screen_width - margin;
+      int block_left_x = block_right_x - total_width;
+
+      // Y position below the bar, with enough room for two lines
+      int block_y = bar_y + bar_height + 10;
+
+      // Draw value (right-aligned inside its mini-block)
+      it.printf(block_left_x + value_text_width, block_y, id(font1), text_white, TextAlign::TOP_RIGHT, "%.3f", peak_val);
+      // "kW" label (left of label block, baseline-aligned)
+      it.print(block_left_x + value_text_width + value_unit_gap, block_y + (value_font_height - unit_font_height), id(font_small), text_gray, TextAlign::TOP_LEFT, "kW");
+      // "Monthly" (top line), right-aligned
+      it.print(block_right_x, block_y, id(font_small), text_gray, TextAlign::TOP_RIGHT, "Monthly");
+      // "Peak" (bottom line), right-aligned
+      it.print(block_right_x, block_y + label_font_height + label_line_gap, id(font_small), text_gray, TextAlign::TOP_RIGHT, "Peak");
