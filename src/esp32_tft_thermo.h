@@ -8,6 +8,12 @@
 
 #include <WiFiClient.h>
 #include <WebServer.h>
+#include <WiFi.h>
+#include <ESPmDNS.h>
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
+
+
 
 struct Coord {
   unsigned int x, y;  
@@ -75,6 +81,7 @@ class ESP32TftThermo : public ESP32Loggable {
         void setupSerial();
         void setupTFT();
         void setupLogging();
+        void setupOTA();
 
     protected:
         // Use hardware SPI

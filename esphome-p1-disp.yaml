@@ -1,0 +1,107 @@
+esphome:
+  name: esp32-disp19
+  friendly_name: esp32-disp19
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+wifi:
+  ssid: !secret wifi70_ssid
+  password: !secret wifi70_password
+  domain: !secret wifi70_domain
+# Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: ${name}
+    password: !secret wifi_ap_password
+
+web_server:
+  port: 80
+  auth:
+    username: !secret web_server_username
+    password: !secret web_server_password
+
+captive_portal:
+
+api:
+  encryption: 
+    key: !secret api_encryption_key
+
+ota:
+  platform: esphome
+  password: !secret ota_password    
+
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: Europe/Brusssels
+    servers:
+      - 192.168.70.1
+
+# Enable logging
+logger:
+
+
+# Example configuration entry
+font:
+  - file: '/config/esphome/fonts/OpenSans-Regular.ttf'
+    id: font1
+    size: 32
+
+sensor:
+  - platform: homeassistant
+    id: p1_produced
+    entity_id: sensor.slimmelezer_power_produced
+  - platform: homeassistant
+    id: p1_consumed
+    entity_id: sensor.slimmelezer_power_consumed
+
+
+spi:
+  clk_pin: 18
+  mosi_pin: 23
+
+
+display:
+  - platform: ili9xxx
+    model: st7789v
+    cs_pin: 5
+    dc_pin: 16
+    reset_pin: 17
+    data_rate: 10MHz   # Can be reduced to 20MHz if unstable
+    dimensions:
+      width: 170
+      height: 320
+      offset_width: 35
+      offset_height: 0
+    rotation: 90
+    color_order: BGR
+    invert_colors: true
+    update_interval: 1s
+    lambda: |-
+      // Switch color every 2 seconds, cycle through: RED, GREEN, BLUE, WHITE
+      auto black = Color(0, 0, 0);
+      auto red = Color(255, 0, 0);
+      auto green = Color(0, 255, 0);
+      auto blue = Color(0, 0, 255);
+      auto white = Color(255, 255, 255);      
+      int cycle = (millis() / 2000) % 5;
+      switch (cycle) {
+        case 0:
+          it.fill(red);
+          break;
+        case 1:
+          it.fill(green);
+          break;
+        case 2:
+          it.fill(blue);
+          break;
+        case 3:
+          it.fill(white);
+          break;
+        case 4:
+          it.fill(Color(0, 0, 0)); // black background
+          it.print(10, 40, id(font1), Color(255, 255, 255), TextAlign::TOP_LEFT, "Hello, ESPHome!");          
+          break;
+      }
